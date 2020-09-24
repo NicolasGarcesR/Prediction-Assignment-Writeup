@@ -1,0 +1,106 @@
+---
+title: "Prediction Assignment Writeup"
+author: "NicolasGarcesR"
+date: "9/22/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(tidyverse)
+```
+
+Lets load the data
+
+```{r}
+train <- read.csv(url('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv'), header= T)
+test <- read.csv(url('https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv'), header = T)
+head(train)
+```
+
+Now, we have to fix the missing data and dropping the data that is not usefull 
+
+```{r}
+train <- train%>% select_if(colSums(is.na(train)) < 19000)
+train<- train[, colSums(is.na(train)) == 0]
+test <- test[, colSums(is.na(test))== 0]
+train <- train[, -c(1:7)]
+test <- test[, -c(1:7)]
+
+```
+
+Now let's divide in a 70/30 proportion 
+
+```{r}
+set.seed(123)
+partition <- sample(19622,13735)
+real_train<- train[partition,]
+train_test <- train[-partition,]
+real_train$classe
+
+```
+
+let's explore the variable of interess (classe)
+```{r}
+table(train$classe)
+```
+
+
+## Regresion tree
+
+lets make a tree
+
+```{r}
+trControl <- trainControl(method="cv", number=5)
+tree <- train(classe~., data=real_train, method="rpart", trControl=trControl)
+fancyRpartPlot(tree$finalModel)
+```
+
+roll_belt, pitch_forearm, magnet_dumbbell and roll forearm are the main elements 
+to divide the activities with the biggest homogeneity possible. However group A is 
+divided in two groups, which means it might have a lot of variance and our estimation might not be the greatest.
+
+
+```{r}
+pred <- predict(tree,train_test)
+cross<- confusionMatrix(train_test$classe,pred)
+cross
+```
+
+The model has  a 48% of accuracy, not very good at all. let's try a different method
+
+## Random Forest
+
+to make it computational feasible, i had to cut the data to run this one.
+
+```{r}
+newsamp<- sample(13735,3000)
+pls_train<- real_train[newsamp,]
+pls_test <- train_test[-newsamp,]
+pls_train<- pls_train[,c(1:4,14:35,42:44,54:66, 76:86)]
+pls_test<- pls_test[,c(1:4,14:35,42:44,54:66, 76:86)]
+
+```
+
+
+```{r}
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+forest <- train(classe ~ ., data = pls_train,method = "rf", trControl=controlRF )
+rf_pred<- predict(forest, newdata = pls_test)
+confusionMatrix(rf_pred, pls_test$classe)
+
+```
+
+Accuracy goes up to 90%, that's a pretty good estimation. the random forest has a high sensitivity and Specificity. This shows that the bootstrapping that is done in random forest allows the model to be more precise. This improves the precision compared to a single tree. 
+
+
+```{r}
+last_test <- predict(forest,newdata=test) 
+last_test
+```
+
